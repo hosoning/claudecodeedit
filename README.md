@@ -51,14 +51,26 @@
 | `TELEGRAM_WEBHOOK_SECRET` | 自己隨便打一串英數字（如 `openssl rand -hex 20`），用來驗證 webhook 請求真的來自 Telegram，設定 webhook 時要帶上同一組值 |
 | `GH_DISPATCH_TOKEN` | GitHub Personal Access Token（fine-grained，僅限這個 repo，`Contents: read`、`Actions: write` 權限），讓 Worker 能觸發 Actions；注意 GitHub 不允許 secret 名稱以 `GITHUB_` 開頭，所以叫這個名字 |
 | `POE_API_KEY` | Poe API key，用於劇本生成 |
-| `PEIYINSHENQI_*` | 配音神器自動化用的憑證，等確認方案(A: HAR分析出的API / B: 帳密)後再補 |
+| `PEIYINSHENQI_SESSION` | 配音神器登入態，JSON字串，內容是瀏覽器 localStorage 的 `tts:user`／`tts:uservip`／`WXOBS_USER_IDENTIFIER_KEY` 等 key/value（見下方「配音神器整合」段落）。這組資料可能會過期，過期時需要重新掃碼登入、重新匯出、更新這個 secret |
+
+## 配音神器整合
+
+配音神器（peiyinshenqi.com）用掃碼登入，沒有帳密。逆向分析後找到：
+
+- 真正的後端 API 在 `https://api3.peiyinshenqi.club/pc/v220/tts/`（`getSynthList` 查詢音色 → `synthFormat` 送出文字合成 → `getTtsResult` 輪詢結果）
+- 每個請求都要帶 `X-TOKEN`/`X-ACCOUNT`/`X-SIGN` 等 header，`X-SIGN` 是逐次變動的簽名，回應內容也是加密的（`"encryption": true`），沒有原始碼難以逆向簽名演算法與加解密方式
+- 因此**不走直接呼叫API的路**，改用 `pipeline/peiyinshenqi_tts.py`：Playwright 開真的瀏覽器，把使用者登入後的 localStorage 原封不動注入進去（跳過掃碼），再照著真實 UI 操作（貼文字→按合成→抓下載的音檔）。簽名/解密都交給網站自己的 JS 處理
+- 單次合成上限 **8000 字**，超過的稿子會自動切段分次合成，之後再用 ffmpeg 接起來（接音檔的邏輯還沒寫，是下一步）
+- `pipeline/peiyinshenqi_tts.py` 裡的 DOM selector 是根據截圖做的最佳猜測，還沒有實跑驗證過，第一次在 Actions 跑大概率要依實際錯誤調整
 
 新增完 secrets 後，push 到這個分支就會觸發 `.github/workflows/deploy.yml` 自動部署 Worker + Pages + D1 migration。
 
 ## 目前狀態
 
 - [x] repo 骨架、Worker webhook 雛形、D1 schema、部署 workflow
-- [ ] 等待 Cloudflare API Token / Account ID
-- [ ] 配音神器整合方案待定（HAR 匯出 或 帳密）
+- [x] Cloudflare API Token 已取得，Account ID 待補
+- [x] 配音神器 API 逆向分析完成，`peiyinshenqi_tts.py` 骨架已寫（用 Playwright，selector 待實跑驗證）
+- [ ] `PEIYINSHENQI_SESSION` secret 待使用者提供並存入 GitHub
+- [ ] 音檔分段合成後的接軌（ffmpeg 拼接）邏輯待寫
 - [ ] 版權策略（仿寫 vs 改寫）待定
 - [ ] 素材庫來源待定
