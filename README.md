@@ -70,7 +70,7 @@
 - [x] repo 骨架、Worker webhook 雛形、D1 schema、部署 workflow
 - [x] Cloudflare API Token 已取得，Account ID 待補
 - [x] 配音神器 API 逆向分析完成，`peiyinshenqi_tts.py` 骨架已寫（用 Playwright，selector 待實跑驗證）
-- [ ] `PEIYINSHENQI_SESSION` secret 待使用者提供並存入 GitHub
+- [x] `PEIYINSHENQI_SESSION` secret 已存入 GitHub，新增獨立的 `test-tts.yml` workflow 可以手動跑單一功能測試
 - [ ] 音檔分段合成後的接軌（ffmpeg 拼接）邏輯待寫
 - [ ] 版權策略（仿寫 vs 改寫）待定
 - [ ] 素材庫來源待定

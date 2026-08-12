@@ -1,0 +1,37 @@
+name: Test TTS Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: '要測試合成的文字（留空用預設範例）'
+        required: false
+        default: '這是一段測試文字，用來確認配音神器自動化流程是否正常運作。'
+
+jobs:
+  test-tts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install python deps
+        run: pip install -r pipeline/requirements.txt
+      - name: Install Playwright browsers
+        run: python -m playwright install --with-deps chromium
+      - name: Write test text
+        env:
+          TEST_TEXT: ${{ github.event.inputs.text }}
+        run: printf '%s' "$TEST_TEXT" > /tmp/test_text.txt
+      - name: Run TTS test
+        env:
+          PEIYINSHENQI_SESSION: ${{ secrets.PEIYINSHENQI_SESSION }}
+        run: python pipeline/peiyinshenqi_tts.py --text-file /tmp/test_text.txt --output-dir /tmp/tts_output
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tts-test-output
+          path: /tmp/tts_output/*.mp3
+          if-no-files-found: warn
