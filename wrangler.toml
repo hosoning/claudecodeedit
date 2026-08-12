@@ -1,0 +1,18 @@
+name = "novel-channel-bot"
+main = "src/worker/index.ts"
+compatibility_date = "2026-08-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "novel_channel"
+database_id = "REPLACE_AFTER_FIRST_D1_CREATE"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "novel-channel-media"
+
+# Secrets (set via `wrangler secret put` or the deploy workflow, not here):
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_WEBHOOK_SECRET
+#   POE_API_KEY
+#   GITHUB_DISPATCH_TOKEN   (PAT with repo scope, used to trigger Actions)

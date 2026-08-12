@@ -1,0 +1,31 @@
+name: Render Episode
+
+on:
+  repository_dispatch:
+    types: [render_episode]
+  workflow_dispatch:
+    inputs:
+      episode_id:
+        description: 'Episode ID to render'
+        required: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install python deps
+        run: pip install -r pipeline/requirements.txt
+      - name: Run pipeline step
+        env:
+          EPISODE_ID: ${{ github.event.client_payload.episode_id || github.event.inputs.episode_id }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          POE_API_KEY: ${{ secrets.POE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python pipeline/render.py --episode-id "$EPISODE_ID"
