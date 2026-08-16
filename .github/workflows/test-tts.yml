@@ -20,6 +20,20 @@ jobs:
         run: pip install -r pipeline/requirements.txt
       - name: Install Playwright browsers
         run: python -m playwright install --with-deps chromium
+      - name: Network diagnostics
+        if: always()
+        run: |
+          echo "== runner 出口 IP / 地區 =="
+          curl -s https://ipinfo.io | tee /tmp/ipinfo.json || true
+          echo
+          echo "== DNS 解析 peiyinshenqi.com =="
+          getent hosts peiyinshenqi.com || true
+          echo
+          echo "== curl -v https://peiyinshenqi.com/ =="
+          curl -v --max-time 15 https://peiyinshenqi.com/ -o /dev/null || true
+          echo
+          echo "== curl -v https://peiyinshenqi.com/tts/index =="
+          curl -v --max-time 15 https://peiyinshenqi.com/tts/index -o /dev/null || true
       - name: Write test text
         env:
           TEST_TEXT: ${{ github.event.inputs.text }}
