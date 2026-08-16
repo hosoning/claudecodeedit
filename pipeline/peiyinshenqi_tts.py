@@ -49,6 +49,11 @@ SYNTH_BUTTON_SELECTOR = "text=合成配音"
 DOWNLOAD_BUTTON_SELECTOR = "text=下载配音"
 LOGIN_REQUIRED_HINT_SELECTOR = "text=登录"  # 用來偵測 session 是否過期（已知會誤判，見 wait_for_login_check）
 
+# 直接按「合成配音」會出現「请先选择右侧的配音」錯誤 —— 要先在右側配音員列表
+# 明確點選一個配音，網站才會認定「已選擇」。這裡先寫死帳號目前顯示的預設配音
+# 「晓辰-知性女声」讓 pipeline 先跑通，之後要讓使用者可指定配音時再改成參數。
+DEFAULT_VOICE_SELECTOR = "text=晓辰-知性女声"
+
 
 def split_into_chunks(text: str, max_chars: int = MAX_CHARS_PER_CALL) -> list[str]:
     """依段落邊界切割文本，避免超過單次合成上限。"""
@@ -146,6 +151,11 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
         editor.fill("")
         editor.fill(text)
         dump_debug(page, download_dir, "after_fill")
+
+        # 沒先選配音的話按「合成配音」會被前端擋下（跳「请先选择右侧的配音」
+        # 錯誤，不會開確認 dialog），所以要先明確點一次配音卡片。
+        page.locator(DEFAULT_VOICE_SELECTOR).first.click()
+        dump_debug(page, download_dir, "after_voice_select")
 
         with page.expect_download(timeout=120_000) as download_info:
             page.locator(SYNTH_BUTTON_SELECTOR).first.click()
