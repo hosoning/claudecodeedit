@@ -73,24 +73,44 @@ def inject_session(context: BrowserContext, session: dict[str, str]) -> None:
 
 
 def wait_for_login_check(page: Page) -> None:
+    # NOTE: 這個 selector 是猜的，目前已知會誤判（頁面上可能本來就有不相關的
+    # "登录" 文字）。先只印警告、不中斷流程，等靠 debug 截圖確認真正的登入態
+    # 判斷方式後再改回會丟例外。
     if page.locator(LOGIN_REQUIRED_HINT_SELECTOR).count() > 0:
-        raise RuntimeError(
-            "配音神器 session 疑似已過期，需要重新掃碼登入並更新 PEIYINSHENQI_SESSION secret"
-        )
+        print("⚠️  偵測到頁面上有「登录」文字，可能是 session 過期，也可能是誤判，繼續執行以便截圖排查")
+
+
+def dump_debug(page: Page, output_dir: Path, label: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        page.screenshot(path=str(output_dir / f"debug_{label}.png"), full_page=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"截圖失敗（{label}）：{e}")
+    try:
+        (output_dir / f"debug_{label}.html").write_text(page.content(), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        print(f"HTML dump 失敗（{label}）：{e}")
 
 
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
     page.goto(TTS_PAGE_URL, wait_until="networkidle")
     wait_for_login_check(page)
+    dump_debug(page, download_dir, "after_goto")
 
-    textarea = page.locator(TEXTAREA_SELECTOR).first
-    textarea.click()
-    textarea.fill("")
-    textarea.fill(text)
+    try:
+        textarea = page.locator(TEXTAREA_SELECTOR).first
+        textarea.click()
+        textarea.fill("")
+        textarea.fill(text)
+        dump_debug(page, download_dir, "after_fill")
 
-    with page.expect_download(timeout=120_000) as download_info:
-        page.locator(SYNTH_BUTTON_SELECTOR).first.click()
-        page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
+        with page.expect_download(timeout=120_000) as download_info:
+            page.locator(SYNTH_BUTTON_SELECTOR).first.click()
+            dump_debug(page, download_dir, "after_synth_click")
+            page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
+    except Exception:
+        dump_debug(page, download_dir, "on_error")
+        raise
 
     download = download_info.value
     dest = download_dir / download.suggested_filename

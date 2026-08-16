@@ -47,5 +47,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tts-test-output
-          path: /tmp/tts_output/*.mp3
+          path: |
+            /tmp/tts_output/*.mp3
+            /tmp/tts_output/debug_*.png
+            /tmp/tts_output/debug_*.html
           if-no-files-found: warn
