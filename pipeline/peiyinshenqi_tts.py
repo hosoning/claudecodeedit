@@ -111,7 +111,12 @@ def dump_debug(page: Page, output_dir: Path, label: str) -> None:
 
 
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
-    page.goto(TTS_PAGE_URL, wait_until="networkidle")
+    # 這個 SPA 疑似有持續背景網路活動（心跳/分析類請求），導致
+    # wait_until="networkidle" 時好時壞（實測有時 8 秒完成、有時 30 秒直接
+    # timeout）。改用 domcontentloaded（只等 DOM 就緒，不等網路安靜）+
+    # 固定緩衝時間讓前端 JS 有機會渲染，穩定性好很多。
+    page.goto(TTS_PAGE_URL, wait_until="domcontentloaded", timeout=30_000)
+    page.wait_for_timeout(5_000)
     wait_for_login_check(page)
     dump_debug(page, download_dir, "after_goto")
 
