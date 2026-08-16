@@ -150,6 +150,21 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
         with page.expect_download(timeout=120_000) as download_info:
             page.locator(SYNTH_BUTTON_SELECTOR).first.click()
             dump_debug(page, download_dir, "after_synth_click")
+
+            # 這個網站是 Element Plus (Vue) 做的：按「合成配音」只會跳出一個
+            # 「配音清单」確認 dialog（列出字數/語速/聲音等），要再按一次
+            # 「开始合成」才會真正送出合成請求。實測不等這步、直接找「下载配音」
+            # 會被 el-loading-mask / dialog 的 pointer-events 擋住，卡到 timeout。
+            confirm_btn = page.locator("text=开始合成").first
+            confirm_btn.wait_for(state="visible", timeout=10_000)
+            confirm_btn.click()
+            dump_debug(page, download_dir, "after_confirm_click")
+
+            # 合成過程中畫面會有 loading mask，等它消失代表合成完成，
+            # 這時「下载配音」才點得到。
+            page.locator(".el-loading-mask").first.wait_for(state="detached", timeout=90_000)
+            dump_debug(page, download_dir, "after_loading_done")
+
             page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
     except Exception:
         dump_debug(page, download_dir, "on_error")
