@@ -192,33 +192,33 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             dump_debug(page, download_dir, "after_synth_click")
 
             # 這個網站是 Element Plus (Vue) 做的：按「合成配音」只會跳出一個
-            # 「配音清单」確認 dialog（列出字數/語速/聲音等），要再按一次
-            # 「开始合成」才會真正送出合成請求。實測不等這步、直接找「下载配音」
-            # 會被 el-loading-mask / dialog 的 pointer-events 擋住，卡到 timeout。
+            # 「配音清单」確認面板（列出字數/語速/聲音等），要再按一次
+            # 「开始合成」才會真正送出合成請求。
+            #
+            # 實測發現一個大坑：第一次按「开始合成」時，網站不會真的送出，而是
+            # 先彈一個一次性提示（「生成配音前，可以先点击试听哦...」+「我知道了」）
+            # 蓋住畫面；關掉提示後「配音清单」面板還在原地、完全沒變化，代表根本
+            # 沒送出合成請求。要再按一次「开始合成」才會真的送出。所以這裡改成
+            # 反覆「按开始合成 → 順手關掉可能跳出的提示」，直到「配音清单」面板
+            # 真的消失（代表已送出）或超過重試次數。
             confirm_btn = page.locator("text=开始合成").first
             confirm_btn.wait_for(state="visible", timeout=10_000)
-            confirm_btn.click()
-            dump_debug(page, download_dir, "after_confirm_click")
+            for attempt in range(4):
+                confirm_btn.click()
+                dump_debug(page, download_dir, f"after_confirm_click_{attempt}")
 
-            # 合成過程中畫面會有 loading mask，但實測發現它消失不代表真正合成
-            # 完成（合成應該是後端非同步任務，mask 只對應某個很短的前端過場）。
-            # 這裡只當作「至少已經送出請求」的粗略訊號，之後還是要靠下面的
-            # 「请先生成配音后再下载」提示來判斷真正是否完成。
-            try:
-                page.locator(".el-loading-mask").first.wait_for(state="detached", timeout=15_000)
-            except PlaywrightTimeoutError:
-                pass
+                dismiss_hint_btn = page.locator("text=我知道了").first
+                try:
+                    dismiss_hint_btn.wait_for(state="visible", timeout=3_000)
+                    dismiss_hint_btn.click()
+                    dump_debug(page, download_dir, f"after_dismiss_hint_{attempt}")
+                except PlaywrightTimeoutError:
+                    pass
+
+                if page.locator("text=开始合成").count() == 0:
+                    break
+                page.wait_for_timeout(1_500)
             dump_debug(page, download_dir, "after_loading_done")
-
-            # 合成完後有時會跳出 intro.js 導覽提示（「温馨提示」+「我知道了」），
-            # 整個蓋住畫面擋住點擊，要先關掉才點得到下载配音。沒跳出來就跳過。
-            dismiss_hint_btn = page.locator("text=我知道了").first
-            try:
-                dismiss_hint_btn.wait_for(state="visible", timeout=5_000)
-                dismiss_hint_btn.click()
-                dump_debug(page, download_dir, "after_dismiss_hint")
-            except PlaywrightTimeoutError:
-                pass
 
             # 實測發現：太早點「下载配音」會跳「请先生成配音后再下载」——代表
             # 後端合成其實是非同步的，跟前面的 loading mask 消失沒有直接關係。
