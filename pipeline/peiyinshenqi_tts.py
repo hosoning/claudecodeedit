@@ -187,7 +187,7 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
         page.locator(DEFAULT_VOICE_SELECTOR).first.click()
         dump_debug(page, download_dir, "after_voice_select")
 
-        with page.expect_download(timeout=120_000) as download_info:
+        with page.expect_download(timeout=180_000) as download_info:
             page.locator(SYNTH_BUTTON_SELECTOR).first.click()
             dump_debug(page, download_dir, "after_synth_click")
 
@@ -200,9 +200,14 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             confirm_btn.click()
             dump_debug(page, download_dir, "after_confirm_click")
 
-            # 合成過程中畫面會有 loading mask，等它消失代表合成完成，
-            # 這時「下载配音」才點得到。
-            page.locator(".el-loading-mask").first.wait_for(state="detached", timeout=90_000)
+            # 合成過程中畫面會有 loading mask，但實測發現它消失不代表真正合成
+            # 完成（合成應該是後端非同步任務，mask 只對應某個很短的前端過場）。
+            # 這裡只當作「至少已經送出請求」的粗略訊號，之後還是要靠下面的
+            # 「请先生成配音后再下载」提示來判斷真正是否完成。
+            try:
+                page.locator(".el-loading-mask").first.wait_for(state="detached", timeout=15_000)
+            except PlaywrightTimeoutError:
+                pass
             dump_debug(page, download_dir, "after_loading_done")
 
             # 合成完後有時會跳出 intro.js 導覽提示（「温馨提示」+「我知道了」），
@@ -215,7 +220,27 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             except PlaywrightTimeoutError:
                 pass
 
-            page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
+            # 實測發現：太早點「下载配音」會跳「请先生成配音后再下载」——代表
+            # 後端合成其實是非同步的，跟前面的 loading mask 消失沒有直接關係。
+            # 改成反覆點擊 + 檢查這個錯誤提示是否還在，直到它消失（代表真的
+            # 合成完成）或超過等待上限。
+            not_ready_toast = page.locator("text=请先生成配音后再下载")
+            max_wait_seconds = 90
+            waited = 0.0
+            while True:
+                page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
+                page.wait_for_timeout(2_000)
+                waited += 2
+                if not_ready_toast.count() == 0:
+                    break
+                print(f"配音尚未合成完成（已等待 {waited:.0f}s），繼續重試下載...")
+                if waited >= max_wait_seconds:
+                    dump_debug(page, download_dir, "synthesis_not_ready_timeout", emit_base64=True)
+                    raise RuntimeError(
+                        f"等待配音合成逾時（{max_wait_seconds}s），一直顯示「请先生成配音后再下载」"
+                    )
+                page.wait_for_timeout(3_000)
+                waited += 3
             dump_debug(page, download_dir, "after_download_click", emit_base64=True)
     except Exception:
         dump_debug(page, download_dir, "on_error", emit_base64=True)
