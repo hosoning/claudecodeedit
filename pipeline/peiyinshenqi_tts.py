@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Iterable
 
-from playwright.sync_api import sync_playwright, Page, BrowserContext
+from playwright.sync_api import sync_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 
 TTS_PAGE_URL = "https://peiyinshenqi.com/tts/index"
 ORIGIN = "https://peiyinshenqi.com"
@@ -174,6 +174,16 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             # 這時「下载配音」才點得到。
             page.locator(".el-loading-mask").first.wait_for(state="detached", timeout=90_000)
             dump_debug(page, download_dir, "after_loading_done")
+
+            # 合成完後有時會跳出 intro.js 導覽提示（「温馨提示」+「我知道了」），
+            # 整個蓋住畫面擋住點擊，要先關掉才點得到下载配音。沒跳出來就跳過。
+            dismiss_hint_btn = page.locator("text=我知道了").first
+            try:
+                dismiss_hint_btn.wait_for(state="visible", timeout=5_000)
+                dismiss_hint_btn.click()
+                dump_debug(page, download_dir, "after_dismiss_hint")
+            except PlaywrightTimeoutError:
+                pass
 
             page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
     except Exception:
