@@ -204,7 +204,12 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             confirm_btn = page.locator("text=开始合成").first
             confirm_btn.wait_for(state="visible", timeout=10_000)
             for attempt in range(4):
-                confirm_btn.click()
+                try:
+                    confirm_btn.click(timeout=5_000)
+                except PlaywrightTimeoutError:
+                    # 按不到了，很可能是上一輪其實已經送出成功、面板正在關閉
+                    # 動畫中或已消失，視為完成而不是錯誤。
+                    break
                 dump_debug(page, download_dir, f"after_confirm_click_{attempt}")
 
                 dismiss_hint_btn = page.locator("text=我知道了").first
@@ -215,9 +220,11 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
                 except PlaywrightTimeoutError:
                     pass
 
+                # 給面板關閉動畫一點時間，避免動畫還沒跑完就誤判成「還沒送出」
+                # 而多按一次。
+                page.wait_for_timeout(2_000)
                 if page.locator("text=开始合成").count() == 0:
                     break
-                page.wait_for_timeout(1_500)
             dump_debug(page, download_dir, "after_loading_done")
 
             # 實測發現：太早點「下载配音」會跳「请先生成配音后再下载」——代表
