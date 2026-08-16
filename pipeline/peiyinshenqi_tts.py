@@ -22,6 +22,7 @@ Actions 執行大概率需要依實際錯誤訊息/截圖調整。
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import time
@@ -94,12 +95,15 @@ def wait_for_login_check(page: Page) -> None:
         print("⚠️  偵測到頁面上有「登录」文字，可能是 session 過期，也可能是誤判，繼續執行以便截圖排查")
 
 
-def dump_debug(page: Page, output_dir: Path, label: str) -> None:
+def dump_debug(page: Page, output_dir: Path, label: str, emit_base64: bool = False) -> None:
     """存檔（給人事後下載看）+ 直接印到 stdout（GitHub Actions log 一定看得到，
-    不像 artifact 還要另外下載）。"""
+    不像 artifact 還要另外下載）。emit_base64=True 時會把截圖用 base64 印到 log
+    裡（分段印，避免單行過長），這樣即使沒辦法下載 artifact，也能從 log 文字
+    重組出實際畫面看。只在關鍵失敗點開，避免每次都印一大包灌爆 log。"""
     output_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = output_dir / f"debug_{label}.png"
     try:
-        page.screenshot(path=str(output_dir / f"debug_{label}.png"), full_page=True)
+        page.screenshot(path=str(screenshot_path))  # 只截 viewport，不用 full_page，檔案小很多
     except Exception as e:  # noqa: BLE001
         print(f"截圖失敗（{label}）：{e}")
     try:
@@ -107,6 +111,16 @@ def dump_debug(page: Page, output_dir: Path, label: str) -> None:
         (output_dir / f"debug_{label}.html").write_text(html, encoding="utf-8")
     except Exception as e:  # noqa: BLE001
         print(f"HTML dump 失敗（{label}）：{e}")
+
+    if emit_base64 and screenshot_path.exists():
+        try:
+            b64 = base64.b64encode(screenshot_path.read_bytes()).decode("ascii")
+            print(f"----- screenshot base64 [{label}] len={len(b64)} -----")
+            for i in range(0, len(b64), 200):
+                print(b64[i : i + 200])
+            print(f"----- end screenshot base64 [{label}] -----")
+        except Exception as e:  # noqa: BLE001
+            print(f"screenshot base64 輸出失敗（{label}）：{e}")
 
     print(f"----- page debug [{label}] -----")
     try:
@@ -202,8 +216,9 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
                 pass
 
             page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
+            dump_debug(page, download_dir, "after_download_click", emit_base64=True)
     except Exception:
-        dump_debug(page, download_dir, "on_error")
+        dump_debug(page, download_dir, "on_error", emit_base64=True)
         raise
 
     download = download_info.value
