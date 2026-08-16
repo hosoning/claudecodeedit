@@ -135,12 +135,28 @@ def find_editor_locator(page: Page):
     )
 
 
+def goto_with_retry(page: Page, url: str, attempts: int = 3, timeout: int = 30_000) -> None:
+    """實測發現 page.goto() 對這個站點時好時壞（同一個 runner，curl 秒連，
+    Chromium 卻可能 30 秒 timeout），懷疑是網站對自動化瀏覽器流量的速率限制/
+    風控，跟 curl 這種輕量請求的待遇不同。用重試處理這種間歇性失敗。"""
+    last_err: Exception | None = None
+    for i in range(attempts):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            return
+        except PlaywrightTimeoutError as e:
+            last_err = e
+            print(f"goto 第 {i + 1}/{attempts} 次 timeout，重試中...")
+    assert last_err is not None
+    raise last_err
+
+
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
     # 這個 SPA 疑似有持續背景網路活動（心跳/分析類請求），導致
     # wait_until="networkidle" 時好時壞（實測有時 8 秒完成、有時 30 秒直接
     # timeout）。改用 domcontentloaded（只等 DOM 就緒，不等網路安靜）+
     # 固定緩衝時間讓前端 JS 有機會渲染，穩定性好很多。
-    page.goto(TTS_PAGE_URL, wait_until="domcontentloaded", timeout=30_000)
+    goto_with_retry(page, TTS_PAGE_URL)
     page.wait_for_timeout(5_000)
     wait_for_login_check(page)
     dump_debug(page, download_dir, "after_goto")
