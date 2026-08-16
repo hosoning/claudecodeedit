@@ -81,15 +81,33 @@ def wait_for_login_check(page: Page) -> None:
 
 
 def dump_debug(page: Page, output_dir: Path, label: str) -> None:
+    """存檔（給人事後下載看）+ 直接印到 stdout（GitHub Actions log 一定看得到，
+    不像 artifact 還要另外下載）。"""
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
         page.screenshot(path=str(output_dir / f"debug_{label}.png"), full_page=True)
     except Exception as e:  # noqa: BLE001
         print(f"截圖失敗（{label}）：{e}")
     try:
-        (output_dir / f"debug_{label}.html").write_text(page.content(), encoding="utf-8")
+        html = page.content()
+        (output_dir / f"debug_{label}.html").write_text(html, encoding="utf-8")
     except Exception as e:  # noqa: BLE001
         print(f"HTML dump 失敗（{label}）：{e}")
+
+    print(f"----- page debug [{label}] -----")
+    try:
+        print("title:", page.title())
+        print("url:", page.url)
+        for tag in ("textarea", "input", "button", "iframe"):
+            print(f"count({tag}):", page.locator(tag).count())
+        for i, frame in enumerate(page.frames):
+            print(f"frame[{i}] url:", frame.url)
+        body_text = page.locator("body").inner_text()
+        print("body text (前 1500 字):")
+        print(body_text[:1500])
+    except Exception as e:  # noqa: BLE001
+        print(f"page debug 收集失敗（{label}）：{e}")
+    print(f"----- end page debug [{label}] -----")
 
 
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
@@ -131,6 +149,10 @@ def synthesize_script(
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context()
+        # 逆向分析發現這個網站是 WeChat 小程序的 web wrapper，判斷是否在小程序
+        # 環境內是靠這個 header；一般瀏覽器直接開網址不會帶，可能導致顯示的是
+        # 「請在小程序內開啟」之類的 fallback 內容而不是真正的工具頁面。
+        context.set_extra_http_headers({"x-wx-ob-env": "web"})
         inject_session(context, session)
         page = context.new_page()
 
