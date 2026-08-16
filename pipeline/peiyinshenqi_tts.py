@@ -34,11 +34,20 @@ TTS_PAGE_URL = "https://peiyinshenqi.com/tts/index"
 ORIGIN = "https://peiyinshenqi.com"
 MAX_CHARS_PER_CALL = 8000  # 站方單次合成上限（實測得知）
 
-# TODO: 這些是最佳猜測，第一次實跑後需要依實際 DOM 校正
-TEXTAREA_SELECTOR = "textarea"
+# 第一次實跑（2026-08-16）確認：登入態注入有效（頁面顯示「包终身 VIP /
+# 到期时间：永久」），合成配音/下载配音兩個按鈕的文字選擇器也在頁面上找得到。
+# 唯獨 <textarea> 完全不存在（count=0），但頁面上有字數統計「284/8000」，代表
+# 編輯區其實是某種富文本 contenteditable（能插入「停頓」之類的行內元件，
+# 不是純文字 textarea 能做到的），所以改成依序嘗試多個候選 selector。
+EDITOR_SELECTOR_CANDIDATES = [
+    '[contenteditable="true"]',
+    '.ql-editor',
+    'div[role="textbox"]',
+    'textarea',
+]
 SYNTH_BUTTON_SELECTOR = "text=合成配音"
 DOWNLOAD_BUTTON_SELECTOR = "text=下载配音"
-LOGIN_REQUIRED_HINT_SELECTOR = "text=登录"  # 用來偵測 session 是否過期
+LOGIN_REQUIRED_HINT_SELECTOR = "text=登录"  # 用來偵測 session 是否過期（已知會誤判，見 wait_for_login_check）
 
 
 def split_into_chunks(text: str, max_chars: int = MAX_CHARS_PER_CALL) -> list[str]:
@@ -110,6 +119,17 @@ def dump_debug(page: Page, output_dir: Path, label: str) -> None:
     print(f"----- end page debug [{label}] -----")
 
 
+def find_editor_locator(page: Page):
+    for sel in EDITOR_SELECTOR_CANDIDATES:
+        count = page.locator(sel).count()
+        print(f"editor selector candidate {sel!r}: count={count}")
+        if count > 0:
+            return page.locator(sel).first
+    raise RuntimeError(
+        f"找不到配音文字編輯區，所有候選 selector 都是 0 個元素：{EDITOR_SELECTOR_CANDIDATES}"
+    )
+
+
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
     # 這個 SPA 疑似有持續背景網路活動（心跳/分析類請求），導致
     # wait_until="networkidle" 時好時壞（實測有時 8 秒完成、有時 30 秒直接
@@ -121,10 +141,10 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
     dump_debug(page, download_dir, "after_goto")
 
     try:
-        textarea = page.locator(TEXTAREA_SELECTOR).first
-        textarea.click()
-        textarea.fill("")
-        textarea.fill(text)
+        editor = find_editor_locator(page)
+        editor.click()
+        editor.fill("")
+        editor.fill(text)
         dump_debug(page, download_dir, "after_fill")
 
         with page.expect_download(timeout=120_000) as download_info:
