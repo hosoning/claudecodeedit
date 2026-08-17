@@ -239,6 +239,21 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             # 真的消失（代表已送出）或超過重試次數。
             confirm_btn = page.locator("text=开始合成").first
             confirm_btn.wait_for(state="visible", timeout=10_000)
+
+            # 花了很多輪都測不出「开始合成」為什麼點了卻不會打 synthFormat，
+            # 直接把按鈕本身跟往上兩層祖先的真實 HTML 印出來看，比再繼續猜
+            # UI 行為有效率。.evaluate() 是主流程呼叫、不是在 event handler
+            # 裡呼叫，不會有同步呼叫死鎖的問題。
+            try:
+                html_dump = confirm_btn.evaluate(
+                    "el => { let s = el.outerHTML; let p = el; "
+                    "for (let i = 0; i < 2 && p.parentElement; i++) { p = p.parentElement; } "
+                    "return JSON.stringify({self: el.outerHTML, ancestor2: p.outerHTML}); }"
+                )
+                print(f"[HTML] 开始合成 按鈕結構 (前3000字): {html_dump[:3000]}")
+            except Exception as e:  # noqa: BLE001
+                print(f"[HTML] 讀取按鈕結構失敗：{e}")
+
             for attempt in range(4):
                 try:
                     confirm_btn.click(timeout=5_000)
@@ -262,12 +277,8 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
                 if page.locator("text=开始合成").count() == 0:
                     break
 
-            # 實測發現：面板關閉後，網路上完全沒有打過 synthFormat（用
-            # page.on("response") 直接驗證過），代表「开始合成」這次點擊
-            # 只是確認/收起設定面板，還沒真的送出合成請求。猜測要在面板收起
-            # 後「再點一次」外層的「合成配音」按鈕才會真的觸發。
-            page.locator(SYNTH_BUTTON_SELECTOR).first.click()
-            dump_debug(page, download_dir, "after_second_synth_click")
+            # 實測過再點一次外層「合成配音」——結果只是讓 getSynthList 重打
+            # 一次、重新打開同一個面板，不是送出合成，這條路已排除。
 
             # 送出確認後先被動等一下（不點任何東西），純粹觀察畫面有沒有變化
             # （例如出現進度條/播放器變成可播放），用截圖確認送出後到底有沒有
