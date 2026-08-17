@@ -165,7 +165,27 @@ def goto_with_retry(page: Page, url: str, attempts: int = 3, timeout: int = 30_0
     raise last_err
 
 
+def install_api_logger(page: Page) -> None:
+    """把打去 api3.peiyinshenqi.club 的請求/回應印到 stdout，用來直接確認
+    點『开始合成』有沒有真的送出合成請求，而不是只能用畫面上的 toast 文字猜。"""
+
+    def on_response(response):
+        url = response.url
+        if "peiyinshenqi" not in url or "/tts/" not in url:
+            return
+        try:
+            body = response.text()
+        except Exception as e:  # noqa: BLE001
+            body = f"<讀取失敗: {e}>"
+        print(f"[API] {response.request.method} {url} -> {response.status}")
+        print(f"[API] body (前500字): {body[:500]}")
+
+    page.on("response", on_response)
+
+
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
+    install_api_logger(page)
+
     # 這個 SPA 疑似有持續背景網路活動（心跳/分析類請求），導致
     # wait_until="networkidle" 時好時壞（實測有時 8 秒完成、有時 30 秒直接
     # timeout）。改用 domcontentloaded（只等 DOM 就緒，不等網路安靜）+
