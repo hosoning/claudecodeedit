@@ -225,7 +225,11 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
                 page.wait_for_timeout(2_000)
                 if page.locator("text=开始合成").count() == 0:
                     break
-            dump_debug(page, download_dir, "after_loading_done")
+            # 送出確認後先被動等一下（不點任何東西），純粹觀察畫面有沒有變化
+            # （例如出現進度條/播放器變成可播放），用截圖確認送出後到底有沒有
+            # 真的開始跑，而不是一直用點擊+檢查 toast 去猜。
+            page.wait_for_timeout(8_000)
+            dump_debug(page, download_dir, "after_confirm_submitted", emit_base64=True)
 
             # 實測發現：太早點「下载配音」會跳「请先生成配音后再下载」——代表
             # 後端合成其實是非同步的，跟前面的 loading mask 消失沒有直接關係。
@@ -234,13 +238,17 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             not_ready_toast = page.locator("text=请先生成配音后再下载")
             max_wait_seconds = 90
             waited = 0.0
+            check_count = 0
             while True:
                 page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
                 page.wait_for_timeout(2_000)
                 waited += 2
+                check_count += 1
                 if not_ready_toast.count() == 0:
                     break
                 print(f"配音尚未合成完成（已等待 {waited:.0f}s），繼續重試下載...")
+                if check_count % 5 == 0:
+                    dump_debug(page, download_dir, f"download_retry_{check_count}", emit_base64=True)
                 if waited >= max_wait_seconds:
                     dump_debug(page, download_dir, "synthesis_not_ready_timeout", emit_base64=True)
                     raise RuntimeError(
