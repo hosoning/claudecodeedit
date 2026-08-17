@@ -187,8 +187,16 @@ def install_api_logger(page: Page) -> None:
             return
         print(f"[API-REQ] {request.method} {url}")
 
+    def on_console(msg):
+        print(f"[CONSOLE:{msg.type}] {msg.text}")
+
+    def on_pageerror(exc):
+        print(f"[PAGEERROR] {exc}")
+
     page.on("response", on_response)
     page.on("request", on_request)
+    page.on("console", on_console)
+    page.on("pageerror", on_pageerror)
 
 
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
