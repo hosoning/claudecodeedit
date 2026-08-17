@@ -272,7 +272,7 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             # 改成反覆點擊 + 檢查這個錯誤提示是否還在，直到它消失（代表真的
             # 合成完成）或超過等待上限。
             not_ready_toast = page.locator("text=请先生成配音后再下载")
-            max_wait_seconds = 30  # 先縮短，這輪主要是靠 [API] log 診斷，不需要真的等滿
+            max_wait_seconds = 60
             waited = 0.0
             while True:
                 page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
@@ -282,7 +282,7 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
                     break
                 print(f"配音尚未合成完成（已等待 {waited:.0f}s），繼續重試下載...")
                 if waited >= max_wait_seconds:
-                    dump_debug(page, download_dir, "synthesis_not_ready_timeout")
+                    dump_debug(page, download_dir, "synthesis_not_ready_timeout", emit_base64=True)
                     raise RuntimeError(
                         f"等待配音合成逾時（{max_wait_seconds}s），一直顯示「请先生成配音后再下载」"
                     )
