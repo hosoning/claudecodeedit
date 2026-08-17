@@ -167,20 +167,28 @@ def goto_with_retry(page: Page, url: str, attempts: int = 3, timeout: int = 30_0
 
 def install_api_logger(page: Page) -> None:
     """把打去 api3.peiyinshenqi.club 的請求/回應印到 stdout，用來直接確認
-    點『开始合成』有沒有真的送出合成請求，而不是只能用畫面上的 toast 文字猜。"""
+    點『开始合成』有沒有真的送出合成請求，而不是只能用畫面上的 toast 文字猜。
+
+    NOTE：第一版在這個 callback 裡呼叫了 response.text()——這是同步 API 的
+    經典地雷：在 page.on() 的同步 callback 裡再呼叫別的同步 Playwright API
+    會卡住 dispatcher thread，導致 callback 整個不會執行、什麼都印不出來
+    （實測完全沒看到任何 [API] 開頭的 log）。改成只印 response 物件已經有的
+    屬性（url/status/method），不做任何額外的同步呼叫。"""
 
     def on_response(response):
         url = response.url
         if "peiyinshenqi" not in url or "/tts/" not in url:
             return
-        try:
-            body = response.text()
-        except Exception as e:  # noqa: BLE001
-            body = f"<讀取失敗: {e}>"
         print(f"[API] {response.request.method} {url} -> {response.status}")
-        print(f"[API] body (前500字): {body[:500]}")
+
+    def on_request(request):
+        url = request.url
+        if "peiyinshenqi" not in url or "/tts/" not in url:
+            return
+        print(f"[API-REQ] {request.method} {url}")
 
     page.on("response", on_response)
+    page.on("request", on_request)
 
 
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
@@ -249,36 +257,32 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             # （例如出現進度條/播放器變成可播放），用截圖確認送出後到底有沒有
             # 真的開始跑，而不是一直用點擊+檢查 toast 去猜。
             page.wait_for_timeout(8_000)
-            dump_debug(page, download_dir, "after_confirm_submitted", emit_base64=True)
+            dump_debug(page, download_dir, "after_confirm_submitted")
 
             # 實測發現：太早點「下载配音」會跳「请先生成配音后再下载」——代表
             # 後端合成其實是非同步的，跟前面的 loading mask 消失沒有直接關係。
             # 改成反覆點擊 + 檢查這個錯誤提示是否還在，直到它消失（代表真的
             # 合成完成）或超過等待上限。
             not_ready_toast = page.locator("text=请先生成配音后再下载")
-            max_wait_seconds = 90
+            max_wait_seconds = 30  # 先縮短，這輪主要是靠 [API] log 診斷，不需要真的等滿
             waited = 0.0
-            check_count = 0
             while True:
                 page.locator(DOWNLOAD_BUTTON_SELECTOR).first.click()
                 page.wait_for_timeout(2_000)
                 waited += 2
-                check_count += 1
                 if not_ready_toast.count() == 0:
                     break
                 print(f"配音尚未合成完成（已等待 {waited:.0f}s），繼續重試下載...")
-                if check_count % 5 == 0:
-                    dump_debug(page, download_dir, f"download_retry_{check_count}", emit_base64=True)
                 if waited >= max_wait_seconds:
-                    dump_debug(page, download_dir, "synthesis_not_ready_timeout", emit_base64=True)
+                    dump_debug(page, download_dir, "synthesis_not_ready_timeout")
                     raise RuntimeError(
                         f"等待配音合成逾時（{max_wait_seconds}s），一直顯示「请先生成配音后再下载」"
                     )
                 page.wait_for_timeout(3_000)
                 waited += 3
-            dump_debug(page, download_dir, "after_download_click", emit_base64=True)
+            dump_debug(page, download_dir, "after_download_click")
     except Exception:
-        dump_debug(page, download_dir, "on_error", emit_base64=True)
+        dump_debug(page, download_dir, "on_error")
         raise
 
     download = download_info.value
