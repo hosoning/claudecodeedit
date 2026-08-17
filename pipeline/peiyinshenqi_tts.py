@@ -312,10 +312,13 @@ def synthesize_script(
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context()
-        # 逆向分析發現這個網站是 WeChat 小程序的 web wrapper，判斷是否在小程序
-        # 環境內是靠這個 header；一般瀏覽器直接開網址不會帶，可能導致顯示的是
-        # 「請在小程序內開啟」之類的 fallback 內容而不是真正的工具頁面。
-        context.set_extra_http_headers({"x-wx-ob-env": "web"})
+        # 之前猜測這個網站需要 x-wx-ob-env header 才會顯示真正內容（而不是
+        # 「請在小程序內開啟」的 fallback），但實測發現頁面本來就正常顯示
+        # 完整功能（VIP 狀態、配音清单都對），這個 header 反而讓瀏覽器把它
+        # 加到「所有」出站請求上（包含第三方 aegis.qq.com 遙測），導致這些
+        # 請求的 CORS preflight 失敗（"Request header field x-wx-ob-env is
+        # not allowed by Access-Control-Allow-Headers"）。這個 header 不需要，
+        # 拿掉。
         inject_session(context, session)
         page = context.new_page()
 
