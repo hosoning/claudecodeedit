@@ -261,6 +261,14 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
                 page.wait_for_timeout(2_000)
                 if page.locator("text=开始合成").count() == 0:
                     break
+
+            # 實測發現：面板關閉後，網路上完全沒有打過 synthFormat（用
+            # page.on("response") 直接驗證過），代表「开始合成」這次點擊
+            # 只是確認/收起設定面板，還沒真的送出合成請求。猜測要在面板收起
+            # 後「再點一次」外層的「合成配音」按鈕才會真的觸發。
+            page.locator(SYNTH_BUTTON_SELECTOR).first.click()
+            dump_debug(page, download_dir, "after_second_synth_click")
+
             # 送出確認後先被動等一下（不點任何東西），純粹觀察畫面有沒有變化
             # （例如出現進度條/播放器變成可播放），用截圖確認送出後到底有沒有
             # 真的開始跑，而不是一直用點擊+檢查 toast 去猜。
