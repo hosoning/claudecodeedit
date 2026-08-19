@@ -396,6 +396,18 @@ def synthesize_script(
         # not allowed by Access-Control-Allow-Headers"）。這個 header 不需要，
         # 拿掉。
         inject_session(context, session)
+
+        # 使用者自己用真的瀏覽器操作一次、抓到完整的 network trace 後發現：
+        # selectVoice / getSynthList 這些「免費」動作我們的自動化都能正常
+        # 觸發，唯獨「开始合成」（會扣付費配額的動作）點了完全沒反應——沒有
+        # console 錯誤、沒有原生 dialog、沒有任何網路請求，跟真人點擊的行為
+        # 差在這裡。這是很典型的網站對「付費/敏感動作」用 navigator.webdriver
+        # 判斷是否為自動化瀏覽器、符合就靜默 return 的防護模式（Playwright/
+        # Puppeteer 預設會把 navigator.webdriver 設成 true）。用 init script
+        # 把它蓋掉，讓頁面讀到的值跟一般瀏覽器一樣是 undefined。
+        context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+        )
         page = context.new_page()
 
         for i, chunk in enumerate(chunks):
