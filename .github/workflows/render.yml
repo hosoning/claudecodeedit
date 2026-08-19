@@ -21,8 +21,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install python deps
         run: pip install -r pipeline/requirements.txt
-      - name: Install Playwright browsers
-        run: python -m playwright install --with-deps chromium
       - name: Run pipeline step
         env:
           EPISODE_ID: ${{ github.event.client_payload.episode_id || github.event.inputs.episode_id }}
@@ -30,5 +28,4 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           POE_API_KEY: ${{ secrets.POE_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          PEIYINSHENQI_SESSION: ${{ secrets.PEIYINSHENQI_SESSION }}
         run: python pipeline/render.py --episode-id "$EPISODE_ID"

@@ -1,7 +1,11 @@
 # YouTube 小說頻道自動化系統
 
-爆款小說仿寫 → AI 配音（配音神器，人工觸發）→ 解壓遊戲素材剪輯 → 字幕燒錄 → 驗片 → 上傳 YouTube，
-用 Telegram bot 串控制與通知，用 Cloudflare Pages 做驗片標註前端。
+爆款小說仿寫 → AI 配音（配音神器，**人工**在小程序生成、傳語音檔給 bot）→ 解壓遊戲素材剪輯 →
+字幕燒錄 → 驗片 → 上傳 YouTube，用 Telegram bot 串控制與通知，用 Cloudflare Pages 做驗片標註前端。
+
+> 配音這一步原本想全自動（Playwright 操作配音神器網頁版），花了大量時間排查後確認網站對「開始合成」
+> 這個會扣付費配額的動作有防自動化偵測（詳見下方「配音神器自動化調查結果」），決定改成人工配音，
+> 其餘步驟全自動。
 
 ## 架構
 
@@ -13,7 +17,7 @@
                               ▼
                     ┌─────────────────┐
                     │  GitHub Actions   │  跑 Poe API 產劇本 / ffmpeg 剪輯 /
-                    │  (ubuntu runner)  │  Whisper 字幕對齊 / 配音神器自動化
+                    │  (ubuntu runner)  │  Whisper 字幕對齊（配音是人工上傳）
                     └─────────┬────────┘
                               │ 上傳成品
                               ▼
@@ -51,26 +55,41 @@
 | `TELEGRAM_WEBHOOK_SECRET` | 自己隨便打一串英數字（如 `openssl rand -hex 20`），用來驗證 webhook 請求真的來自 Telegram，設定 webhook 時要帶上同一組值 |
 | `GH_DISPATCH_TOKEN` | GitHub Personal Access Token（fine-grained，僅限這個 repo，`Contents: read`、`Actions: write` 權限），讓 Worker 能觸發 Actions；注意 GitHub 不允許 secret 名稱以 `GITHUB_` 開頭，所以叫這個名字 |
 | `POE_API_KEY` | Poe API key，用於劇本生成 |
-| `PEIYINSHENQI_SESSION` | 配音神器登入態，JSON字串，內容是瀏覽器 localStorage 的 `tts:user`／`tts:uservip`／`WXOBS_USER_IDENTIFIER_KEY` 等 key/value（見下方「配音神器整合」段落）。這組資料可能會過期，過期時需要重新掃碼登入、重新匯出、更新這個 secret |
 
-## 配音神器整合
+## 配音神器自動化調查結果（已放棄，改人工）
 
 配音神器（peiyinshenqi.com）用掃碼登入，沒有帳密。逆向分析後找到：
 
-- 真正的後端 API 在 `https://api3.peiyinshenqi.club/pc/v220/tts/`（`getSynthList` 查詢音色 → `synthFormat` 送出文字合成 → `getTtsResult` 輪詢結果）
-- 每個請求都要帶 `X-TOKEN`/`X-ACCOUNT`/`X-SIGN` 等 header，`X-SIGN` 是逐次變動的簽名，回應內容也是加密的（`"encryption": true`），沒有原始碼難以逆向簽名演算法與加解密方式
-- 因此**不走直接呼叫API的路**，改用 `pipeline/peiyinshenqi_tts.py`：Playwright 開真的瀏覽器，把使用者登入後的 localStorage 原封不動注入進去（跳過掃碼），再照著真實 UI 操作（貼文字→按合成→抓下載的音檔）。簽名/解密都交給網站自己的 JS 處理
-- 單次合成上限 **8000 字**，超過的稿子會自動切段分次合成，之後再用 ffmpeg 接起來（接音檔的邏輯還沒寫，是下一步）
-- `pipeline/peiyinshenqi_tts.py` 裡的 DOM selector 是根據截圖做的最佳猜測，還沒有實跑驗證過，第一次在 Actions 跑大概率要依實際錯誤調整
+- 真正的後端 API 在 `https://api3.peiyinshenqi.club/pc/v220/tts/`（`getVoices`/`selectVoice` 選音色 →
+  `getSynthList` 開確認面板 → `synthFormat` 送出文字合成 → `getTtsResult` 輪詢結果 → `preDownload` 準備下載）
+- 每個請求都要帶 `X-TOKEN`/`X-ACCOUNT`/`X-SIGN` 等 header，`X-SIGN` 是逐次變動的簽名，回應內容也是加密的
+  （`"encryption": true`），沒有原始碼難以逆向簽名演算法與加解密方式，所以改用 Playwright 開真的瀏覽器、
+  注入登入態、照 UI 操作，簽名/解密交給網站自己的 JS 處理
+- **卡關**：把登入態注入瀏覽器後，選配音、填文字都正常（也會正確打對應的 API），唯獨按下「開始合成」
+  （會扣付費配額的動作）在 Playwright 裡完全沒反應——沒有任何錯誤、沒有原生 dialog、也不會打
+  `synthFormat`。用使用者自己真實瀏覽器操作、攔截 network 請求比對後確認：一樣的按鈕，真人點擊會正常
+  觸發 `synthFormat`，Playwright 點擊（含模擬真實滑鼠移動軌跡、蓋掉 `navigator.webdriver`）完全不會。
+  合理推斷網站對這個付費動作做了不只一種自動化偵測，繼續猜測性排查的邊際效益已經很低
+- 已排除的假設（照排查順序）：loading mask 誤判、一次性提示視窗擋住點擊、多餘的 `x-wx-ob-env` header
+  （這個 header 本身有害，會讓 aegis.qq.com 遙測的 CORS preflight 失敗，已移除）、需要連點兩次確認、
+  原生 `confirm()` 對話框被 Playwright 預設自動取消、缺乏真實滑鼠移動軌跡、下拉選單 v-model 未寫入、
+  `navigator.webdriver` 偵測
+- `pipeline/peiyinshenqi_tts.py` 保留在 repo 裡（連同 `test-tts.yml` 診斷 workflow）供以後有新線索時繼續
+  排查，但**目前的 pipeline 不會呼叫它**
+- 決定：配音改成人工——使用者在小程序手動生成配音，把音檔傳給 Telegram bot（`src/worker/index.ts`
+  的 `handleVoiceUpload` 已經處理這段：綁定到最新 `script_ready` 集數、存到 R2、觸發後續剪輯）
 
 新增完 secrets 後，push 到這個分支就會觸發 `.github/workflows/deploy.yml` 自動部署 Worker + Pages + D1 migration。
 
 ## 目前狀態
 
 - [x] repo 骨架、Worker webhook 雛形、D1 schema、部署 workflow
-- [x] Cloudflare API Token 已取得，Account ID 待補
-- [x] 配音神器 API 逆向分析完成，`peiyinshenqi_tts.py` 骨架已寫（用 Playwright，selector 待實跑驗證）
-- [x] `PEIYINSHENQI_SESSION` secret 已存入 GitHub，新增獨立的 `test-tts.yml` workflow 可以手動跑單一功能測試
-- [ ] 音檔分段合成後的接軌（ffmpeg 拼接）邏輯待寫
+- [x] Telegram bot：`/newscript` 建集數、`/status` 查狀態、收語音檔綁定集數並觸發渲染
+- [x] 配音神器全自動化：調查後確認網站對付費動作有防自動化偵測，改為人工配音（見上方調查結果）
+- [ ] `pipeline/render.py` 的 `generate_script`（Poe API 劇本生成）尚未實作
+- [ ] `pipeline/render.py` 的 `render_video`（ffmpeg 剪輯／Whisper 字幕對齊）尚未實作
 - [ ] 版權策略（仿寫 vs 改寫）待定
-- [ ] 素材庫來源待定
+- [ ] 素材庫（解壓遊戲畫面）來源待定
+- [ ] 背景音樂來源待定
+- [ ] 字幕字型（抖音美好體）授權/取得方式待定
+- [ ] Cloudflare Account ID 待補（其餘 secrets 見上表）
