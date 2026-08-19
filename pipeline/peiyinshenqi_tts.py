@@ -234,29 +234,6 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
         page.locator(DEFAULT_VOICE_SELECTOR).first.click()
         dump_debug(page, download_dir, "after_voice_select")
 
-        # 新懷疑：語速/輸出格式/情感強度這三個下拉選單畫面上雖然顯示
-        # 「正常语速」「mp3」「正常情感」，但那有可能只是 placeholder，
-        # 底層 Element Plus 的 v-model 根本還是空的（要使用者真的點開選單、
-        # 選一次才會寫入值）。如果「开始合成」的送出邏輯有做表單驗證、
-        # 檢查這幾個欄位是否為空，沒選過的話可能就直接靜默中止、不打任何
-        # API，剛好符合我們觀察到的現象。這裡明確點開每個下拉選單、選同一個
-        # 目前顯示的選項，確保底層真的有值。
-        for label_text in ("正常语速", "mp3", "正常情感"):
-            try:
-                trigger = page.locator(f"text={label_text}").first
-                trigger.click(timeout=3_000)
-                page.wait_for_timeout(300)
-                option = page.locator(
-                    f".el-select-dropdown__item:has-text('{label_text}'), "
-                    f"li:has-text('{label_text}')"
-                ).first
-                if option.count() > 0:
-                    option.click(timeout=2_000)
-                page.wait_for_timeout(300)
-            except Exception as e:  # noqa: BLE001
-                print(f"[SELECT] 選單「{label_text}」互動失敗（可能不是下拉選單或選項文字不符）：{e}")
-        dump_debug(page, download_dir, "after_dropdown_interaction")
-
         with page.expect_download(timeout=180_000) as download_info:
             page.locator(SYNTH_BUTTON_SELECTOR).first.click()
             dump_debug(page, download_dir, "after_synth_click")
