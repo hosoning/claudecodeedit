@@ -193,10 +193,21 @@ def install_api_logger(page: Page) -> None:
     def on_pageerror(exc):
         print(f"[PAGEERROR] {exc}")
 
+    def on_dialog(dialog):
+        # 新假設：如果「开始合成」跳的是瀏覽器原生 confirm()/alert()，Playwright
+        # 預設會自動 dismiss（等同使用者按取消），完全不會留下任何 DOM/網路/
+        # console 痕跡——這會剛好解釋我們觀察到的所有現象（點擊成功、面板關掉、
+        # 但完全沒有 synthFormat request、也沒有任何錯誤訊息）。這裡明確接受，
+        # 並印出內容確認有沒有真的是這個原因。dialog.accept() 是 Playwright
+        # 官方文件示範的標準寫法，跟 response.text() 那種同步呼叫死鎖不同。
+        print(f"[DIALOG] type={dialog.type} message={dialog.message!r}")
+        dialog.accept()
+
     page.on("response", on_response)
     page.on("request", on_request)
     page.on("console", on_console)
     page.on("pageerror", on_pageerror)
+    page.on("dialog", on_dialog)
 
 
 def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
