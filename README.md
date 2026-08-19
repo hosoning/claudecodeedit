@@ -38,9 +38,9 @@
 > 配音神器等外部服務，所以所有部署與測試都透過「推 commit → GitHub Actions 執行」完成，而不是
 > 在對話環境裡手動操作。
 
-## 資料表（Cloudflare D1，見 migrations/0001_init.sql）
+## 資料表（Cloudflare D1，見 migrations/）
 
-- `episodes`：每一集的狀態機（腳本/配音/剪輯/驗片/上傳 各階段狀態與檔案路徑）
+- `episodes`：每一集的狀態機（腳本/配音/剪輯/驗片/上傳 各階段狀態與檔案路徑、觸發者 `chat_id`）
 - `annotations`：驗片頁提交的標註（時間戳、座標、文字、是否已處理）
 
 ## 你需要提供的 GitHub Secrets
@@ -55,6 +55,7 @@
 | `TELEGRAM_WEBHOOK_SECRET` | 自己隨便打一串英數字（如 `openssl rand -hex 20`），用來驗證 webhook 請求真的來自 Telegram，設定 webhook 時要帶上同一組值 |
 | `GH_DISPATCH_TOKEN` | GitHub Personal Access Token（fine-grained，僅限這個 repo，`Contents: read`、`Actions: write` 權限），讓 Worker 能觸發 Actions；注意 GitHub 不允許 secret 名稱以 `GITHUB_` 開頭，所以叫這個名字 |
 | `POE_API_KEY` | Poe API key，用於劇本生成 |
+| `POE_BOT_NAME`（選填） | 要用哪個 Poe bot 生成劇本，預設 `Claude-3.7-Sonnet`，看你的 Poe 方案有哪些 bot 可用再調整 |
 
 ## 配音神器自動化調查結果（已放棄，改人工）
 
@@ -84,10 +85,11 @@
 ## 目前狀態
 
 - [x] repo 骨架、Worker webhook 雛形、D1 schema、部署 workflow
-- [x] Telegram bot：`/newscript` 建集數、`/status` 查狀態、收語音檔綁定集數並觸發渲染
+- [x] Telegram bot：`/newscript` 建集數（含 `chat_id`）、`/status` 查狀態、收語音檔綁定集數並觸發渲染
 - [x] 配音神器全自動化：調查後確認網站對付費動作有防自動化偵測，改為人工配音（見上方調查結果）
-- [ ] `pipeline/render.py` 的 `generate_script`（Poe API 劇本生成）尚未實作
-- [ ] `pipeline/render.py` 的 `render_video`（ffmpeg 剪輯／Whisper 字幕對齊）尚未實作
+- [x] `pipeline/render.py` 的 `generate_script`：呼叫 Poe API 仿寫劇本（用「接續」的方式湊到目標字數）、
+      存 R2、更新 D1、把劇本用 Telegram 傳給使用者去配音 —— 邏輯已寫完，**還沒實跑驗證過**
+- [ ] `pipeline/render.py` 的 `render_video`（ffmpeg 剪輯／Whisper 字幕對齊）卡在下面三項還沒定案
 - [ ] 版權策略（仿寫 vs 改寫）待定
 - [ ] 素材庫（解壓遊戲畫面）來源待定
 - [ ] 背景音樂來源待定

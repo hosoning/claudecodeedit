@@ -63,9 +63,9 @@ async function handleCommand(
       return;
     }
     const result = await env.DB.prepare(
-      'INSERT INTO episodes (title, status) VALUES (?, ?)'
+      'INSERT INTO episodes (title, status, chat_id) VALUES (?, ?, ?)'
     )
-      .bind(arg, 'script_pending')
+      .bind(arg, 'script_pending', chatId)
       .run();
     const episodeId = result.meta.last_row_id;
     await tg.sendMessage(chatId, `已建立集數 #${episodeId}，主題：${arg}，開始生成劇本…`);
