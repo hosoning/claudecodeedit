@@ -265,9 +265,32 @@ def synthesize_chunk(page: Page, text: str, download_dir: Path) -> Path:
             except Exception as e:  # noqa: BLE001
                 print(f"[HTML] 讀取按鈕結構失敗：{e}")
 
+            def realistic_click(locator) -> bool:
+                """已經排除 loading mask / 一次性提示 / x-wx-ob-env header /
+                連點兩次 / 原生 confirm() 這幾種假設，「开始合成」點了就是不會
+                打 synthFormat。剩下懷疑：這是會扣點數的付費動作，網站可能對
+                這個按鈕做行為分析（滑鼠真實移動軌跡、按下到放開的時間），
+                Playwright 預設的 .click() 幾乎是瞬間完成、沒有真實滑鼠移動，
+                跟真人操作差很多。這裡改成先移動滑鼠過去、停一下、按下、停一下
+                再放開，模擬更接近真人的操作節奏。"""
+                box = locator.bounding_box()
+                if box is None:
+                    return False
+                x = box["x"] + box["width"] / 2
+                y = box["y"] + box["height"] / 2
+                page.mouse.move(max(x - 60, 0), max(y - 40, 0), steps=8)
+                page.wait_for_timeout(120)
+                page.mouse.move(x, y, steps=12)
+                page.wait_for_timeout(180)
+                page.mouse.down()
+                page.wait_for_timeout(90)
+                page.mouse.up()
+                return True
+
             for attempt in range(4):
                 try:
-                    confirm_btn.click(timeout=5_000)
+                    if not realistic_click(confirm_btn):
+                        confirm_btn.click(timeout=5_000)
                 except PlaywrightTimeoutError:
                     # 按不到了，很可能是上一輪其實已經送出成功、面板正在關閉
                     # 動畫中或已消失，視為完成而不是錯誤。
